@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>中转站会存储你的数据吗 — TokenDirect 安全研究</title>
+<meta name="description" content="模仿 OpenRouter 的中转站，到底会不会存储你的数据？一篇基于公开资料的技术与信任模型分析。">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+:root{
+  --ink:#1d1d1f;
+  --ink-soft:#333336;
+  --gray:#6e6e73;
+  --gray-light:#86868b;
+  --line:#d2d2d7;
+  --line-soft:#e8e8ed;
+  --bg:#ffffff;
+  --bg-soft:#fafafa;
+  --link:#0066cc;
+}
+
+html{ font-size:16px; -webkit-text-size-adjust:100%; scroll-behavior:smooth; }
+body{
+  font-family:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;
+  color:var(--ink); background:var(--bg);
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  line-height:1.47; letter-spacing:-.003em;
+}
+
+a{ color:var(--link); text-decoration:none; }
+a:hover{ text-decoration:underline; }
+
+/* ---------- Global nav (Apple style) ---------- */
+.gnav{
+  position:sticky; top:0; z-index:100;
+  background:rgba(255,255,255,.82);
+  backdrop-filter:saturate(180%) blur(20px);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+  border-bottom:1px solid var(--line-soft);
+}
+.gnav-inner{
+  max-width:980px; margin:0 auto; padding:0 22px; height:52px;
+  display:flex; align-items:center; justify-content:space-between; gap:24px;
+}
+.gnav-brand{ font-size:1rem; font-weight:600; color:var(--ink); letter-spacing:-.01em; white-space:nowrap; }
+.gnav-brand:hover{ text-decoration:none; }
+.gnav-brand b{ color:var(--link); font-weight:600; }
+.gnav-links{ display:flex; gap:26px; }
+.gnav-links a{ font-size:.78rem; color:var(--gray); }
+.gnav-links a:hover{ color:var(--ink); text-decoration:none; }
+.gnav-links a.active{ color:var(--ink); font-weight:500; }
+
+/* ---------- Article shell ---------- */
+.article{ max-width:692px; margin:0 auto; padding:0 22px; }
+
+.breadcrumb{ margin-top:40px; font-size:.82rem; }
+.breadcrumb a{ color:var(--link); }
+
+.pubdate{ margin-top:34px; font-size:.82rem; color:var(--gray-light); letter-spacing:.01em; }
+
+h1{
+  margin-top:8px;
+  font-size:clamp(2.1rem,5.5vw,3rem);
+  font-weight:700; line-height:1.07; letter-spacing:-.025em;
+  color:var(--ink);
+}
+.byline{
+  margin-top:22px; font-size:.95rem; color:var(--gray); line-height:1.5;
+}
+
+.tools{
+  display:flex; align-items:center; gap:14px;
+  margin-top:26px; padding-bottom:26px; border-bottom:1px solid var(--line-soft);
+}
+.tools button{
+  width:34px; height:34px; border-radius:50%;
+  border:1px solid var(--line); background:#fff; color:var(--gray);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:background .2s, color .2s;
+}
+.tools button:hover{ background:var(--bg-soft); color:var(--ink); }
+.tools button svg{ width:16px; height:16px; }
+.tools .copied{ font-size:.78rem; color:var(--gray-light); opacity:0; transition:opacity .2s; }
+.tools .copied.show{ opacity:1; }
+
+/* ---------- Body typography ---------- */
+.body{ padding:38px 0 20px; }
+.body > p{
+  font-size:1.18rem; line-height:1.62; color:var(--ink-soft);
+  margin:0 0 1.25em;
+}
+.body .lede{
+  font-size:1.32rem; line-height:1.5; color:var(--ink); font-weight:400;
+  margin-bottom:1.5em; letter-spacing:-.012em;
+}
+.body h2{
+  font-size:clamp(1.5rem,3.4vw,1.85rem);
+  font-weight:600; line-height:1.2; letter-spacing:-.018em;
+  color:var(--ink); margin:2.1em 0 .7em;
+}
+.body strong{ font-weight:600; color:var(--ink); }
+.body em{ font-style:normal; color:var(--ink); font-weight:600; }
+
+.body ul{ margin:1.1em 0 1.5em; padding-left:1.3em; }
+.body li{
+  font-size:1.18rem; line-height:1.58; color:var(--ink-soft);
+  margin-bottom:.7em; padding-left:.2em;
+}
+.body li::marker{ color:var(--gray-light); }
+
+.body a{ color:var(--link); }
+
+/* ---------- Pull quote ---------- */
+.pullquote{
+  margin:2em 0; padding:4px 0 4px 24px;
+  border-left:3px solid var(--ink);
+  font-size:1.45rem; line-height:1.4; font-weight:600;
+  letter-spacing:-.018em; color:var(--ink);
+}
+
+/* ---------- Figure (layers) ---------- */
+figure{ margin:2.2em 0; }
+.fig-box{
+  border:1px solid var(--line); border-radius:14px;
+  background:var(--bg-soft); padding:28px 26px;
+}
+.fig-row{ padding:16px 0; border-top:1px solid var(--line-soft); }
+.fig-row:first-child{ border-top:none; padding-top:4px; }
+.fig-row:last-child{ padding-bottom:4px; }
+.fig-row .label{
+  display:flex; justify-content:space-between; align-items:baseline;
+  gap:12px; margin-bottom:12px; flex-wrap:wrap;
+}
+.fig-row .name{ font-size:.98rem; font-weight:600; color:var(--ink); }
+.fig-row .count{ font-size:.82rem; color:var(--gray-light); }
+.fig-flow{ display:flex; align-items:center; flex-wrap:wrap; gap:0; }
+.fnode{
+  font-size:.82rem; color:var(--ink-soft); padding:6px 12px;
+  border:1px solid var(--line); border-radius:8px; background:#fff; white-space:nowrap;
+}
+.fnode.self{ border-color:var(--ink); color:var(--ink); font-weight:500; }
+.fnode.mid{ border-style:dashed; color:var(--gray); }
+.farrow{ color:var(--gray-light); padding:0 8px; font-size:.85rem; }
+figcaption{ margin-top:14px; font-size:.84rem; color:var(--gray-light); line-height:1.5; }
+
+/* ---------- Closing note ---------- */
+.endnote{
+  margin:2.4em 0 0; padding-top:1.6em; border-top:1px solid var(--line-soft);
+  font-size:1.05rem; line-height:1.6; color:var(--gray);
+}
+
+/* ---------- Footer (Apple style) ---------- */
+.disclaimer{
+  max-width:692px; margin:60px auto 0; padding:24px 22px 0;
+  border-top:1px solid var(--line-soft);
+  font-size:.78rem; color:var(--gray-light); line-height:1.6;
+}
+.disclaimer p+p{ margin-top:8px; }
+
+.gfooter{
+  margin-top:48px; background:var(--bg-soft);
+  border-top:1px solid var(--line-soft); padding:34px 22px;
+  font-size:.78rem; color:var(--gray-light);
+}
+.gfooter-inner{ max-width:980px; margin:0 auto; }
+.gfooter .crumb{ color:var(--gray); margin-bottom:14px; }
+.gfooter .crumb a{ color:var(--gray); }
+.gfooter .copy{ padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.gfooter .links{ display:flex; flex-wrap:wrap; gap:8px 22px; padding-top:14px; }
+.gfooter .links a{ color:var(--gray-light); }
+.gfooter .links a:hover{ color:var(--ink); text-decoration:none; }
+
+/* ---------- Responsive ---------- */
+@media (max-width:734px){
+  .gnav-links{ display:none; }
+  .body > p, .body li{ font-size:1.08rem; }
+  .body .lede{ font-size:1.18rem; }
+  .pullquote{ font-size:1.25rem; }
+  .farrow{ padding:0 5px; }
+  .fnode{ font-size:.78rem; padding:5px 10px; }
+}
+</style>
+</head>
+<body>
+
+<!-- GLOBAL NAV -->
+<nav class="gnav">
+  <div class="gnav-inner">
+    <a href="index.html" class="gnav-brand">Token<b>Direct</b> 安全研究</a>
+    <div class="gnav-links">
+      <a href="index.html">概览</a>
+      <a href="relay-risks.html" class="active">博客</a>
+      <a href="index.html#solution">方案</a>
+      <a href="index.html#compare">对比</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ARTICLE -->
+<main class="article">
+  <p class="breadcrumb"><a href="index.html">博客</a></p>
+  <p class="pubdate">2026 年 6 月 23 日</p>
+  <h1>中转站会存储你的数据吗</h1>
+  <p class="byline">由 TokenDirect 安全研究团队撰写</p>
+
+  <div class="tools">
+    <button onclick="shareX()" aria-label="分享到 X">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.66l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+    </button>
+    <button onclick="copyLink()" aria-label="复制链接">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
+    </button>
+    <span class="copied" id="copied">已复制链接</span>
+  </div>
+
+  <div class="body">
+    <p class="lede">很多人有个直觉：只要中转站在首页写着「我们不存储数据」，自己的对话就是安全的。对于模仿 OpenRouter 的那一类中转站，事情要更复杂一些——它默认确实不记录你的正文，但「默认」在这里几乎不构成任何保护。</p>
+
+    <p>要理解这一点，得先弄清楚这些中转站到底是什么，以及真正掌控它们的是谁。本文基于公开资料，梳理这类平台的数据处理方式与背后的信任模型。</p>
+
+    <h2>它们建立在同一套开源代码之上</h2>
+    <p>市面上绝大多数这类中转站，并不是各自从零写的系统，而是基于几个开源项目搭起来的，最主流的是 one-api 和它的二次开发版 new-api，以及 one-hub、veloera 等衍生项目。换句话说，你看到的那些站点，本质上是同一套开源代码、加上一台服务器、再接上站长自己找来的上游渠道。</p>
+    <p>理解了这个结构，数据问题就清楚了一大半：它的行为不取决于某份对外承诺，而取决于那台服务器上的配置，以及配置背后的人。</p>
+
+    <h2>默认情况下，只记录元数据</h2>
+    <p>从这些系统的日志结构能看出，默认写进数据库的是 token 数量、模型名、配额、延迟这类信息，而不是你的对话正文。这一点，和 OpenRouter 的默认行为其实是接近的。</p>
+    <p>如果只看这一层，似乎挺安全。问题在于，<strong>默认行为在这里几乎不构成任何保护</strong>，原因不在技术，而在于谁掌控这套系统。</p>
+
+    <h2>关键差别在于谁掌控服务器</h2>
+    <p>OpenRouter 是一家有公开隐私政策、有零数据留存（ZDR）合同承诺、有组织级访问控制的公司，它的「不记录」是写进政策、对外承诺、并配有工具让你强制执行的。而一个基于 new-api 搭起来的中转站，站长对那台服务器和数据库拥有完全的 root 权限——「不记录正文」只是一个可以随时改掉的配置项，而不是任何形式的承诺。</p>
+    <p>而且把全量正文记录打开，对站长来说成本极低：改个配置、装个插件即可。社区里早就存在大量这类需求，比如要求「记录每个请求的输入，管理员可读取」、要求「临时开启透传日志以排查问题」。也就是说：</p>
+    <ul>
+      <li>OpenRouter 默认不存，意味着公司政策上承诺不存，并给你 ZDR 工具去强制；</li>
+      <li>山寨中转站默认不存，只意味着这台服务器的某个开关此刻碰巧没打开——站长想打开随时打开，且不需要告诉你。</li>
+    </ul>
+
+    <div class="pullquote">默认不记录，只是一个开关。而你完全无从察觉它何时被打开。</div>
+
+    <h2>你的数据会经过几手</h2>
+    <p>中转架构里最容易被误解的，是数据实际经手的层数。OpenRouter 本身只是个代理，它把请求转发给真正跑模型的供应商，那个供应商再按自己的政策处理。每多一层中间人，就多一个可以把你的请求落盘的地方；而廉价中转的中间层，往往还是匿名的。</p>
+    <figure>
+      <div class="fig-box">
+        <div class="fig-row">
+          <div class="label"><span class="name">直连官方 API</span><span class="count">1 层 · 信任链最短</span></div>
+          <div class="fig-flow"><span class="fnode self">你</span><span class="farrow">→</span><span class="fnode">官方模型</span></div>
+        </div>
+        <div class="fig-row">
+          <div class="label"><span class="name">OpenRouter</span><span class="count">2 层 · 自己 + 下游供应商</span></div>
+          <div class="fig-flow"><span class="fnode self">你</span><span class="farrow">→</span><span class="fnode mid">OpenRouter</span><span class="farrow">→</span><span class="fnode">官方模型</span></div>
+        </div>
+        <div class="fig-row">
+          <div class="label"><span class="name">廉价 / 逆向中转</span><span class="count">3、4 层甚至更多 · 多为匿名</span></div>
+          <div class="fig-flow"><span class="fnode self">你</span><span class="farrow">→</span><span class="fnode mid">中转站</span><span class="farrow">→</span><span class="fnode mid">逆向 / 共享号</span><span class="farrow">→</span><span class="fnode mid">上级中转</span><span class="farrow">→</span><span class="fnode">官方模型</span></div>
+        </div>
+      </div>
+      <figcaption>虚线节点都是潜在的存储点。每一处都可能记录、留存、甚至转卖你的请求。</figcaption>
+    </figure>
+
+    <h2>还有几个 OpenRouter 没有的风险</h2>
+    <p>除了「正文可能被记录」之外，山寨中转站还附带几类结构性风险，这些是直连官方或使用正规聚合平台时不会遇到的：</p>
+    <ul>
+      <li><strong>多了几层中间人。</strong>很多廉价站的上游本身就是逆向或共享账号，你的请求经过好几手才到真正的模型，每多一手就多一个落盘点。</li>
+      <li><strong>没有可审计的政策。</strong>这类站点常常没有真正的隐私政策，或只有一段模板化免责声明。即使写了「我们不记录」，你也没有任何办法核实。</li>
+      <li><strong>主体和管辖不透明。</strong>站长是谁、服务器在哪、出事找谁，通常都不清楚。一旦发生数据泄露，基本无从追责。</li>
+      <li><strong>它本身就是高价值攻击目标。</strong>大量用户的请求和上游 key 集中在一台服务器上。一旦被攻破或站长跑路，集中存储的数据会一次性暴露。</li>
+    </ul>
+
+    <h2>怎么使用才稳妥</h2>
+    <p>对这类站点，务实的态度是：不论首页怎么写，都默认假设你的对话正文可能被记录、被站长看到、甚至被转卖。它技术上完全做得到，而你无法证伪。在这个前提下，有几条实践原则：</p>
+    <ul>
+      <li>不要把任何机密、隐私、受监管的数据发过去。</li>
+      <li>真要用，优先选有明确主体、明确政策的平台，而不是群里发的匿名廉价站。</li>
+      <li>想清楚：省下的那点钱，对应的就是你让渡的数据可见性。</li>
+      <li>真正敏感的场景，要么直连官方 API，要么干脆使用本地模型。</li>
+    </ul>
+
+    <h2>一个反直觉的结论</h2>
+    <p>有个容易被忽略、但很重要的点：正因为这些系统是开源、可自托管的，如果你自己用 new-api 搭一个只给自己用的实例，数据反而是最可控的——所有数据都在你自己的服务器上，不发给任何第三方。</p>
+    <p>所以真正可怕的从来不是这套软件本身，而是「别人替你托管、而你看不到他改了什么」这个结构。判断一个中转站可不可信，核心问题始终是同一个：你看不见的那一端，究竟由谁掌控。</p>
+
+    <p class="endnote">对个人用户，做到「默认假设会被看到」或许就够了。但对企业而言，这远远不够——数据安全是一条不可逾越的红线。这也是 <a href="index.html#solution">TokenDirect 官方 IAM 直供方案</a> 想解决的问题：祛除中间商，让每一次调用都在官方身份框架内完成。</p>
+  </div>
+</main>
+
+<!-- DISCLAIMER -->
+<div class="disclaimer">
+  <p>本文为基于公开资料的一般性风险分析，不针对任何具体平台，也不构成对任何服务的指控。</p>
+  <p>AI 平台与中转站的政策、代码会随时变化，使用前请自行核实当前条款。涉及敏感数据时请独立评估风险。</p>
+</div>
+
+<!-- FOOTER -->
+<footer class="gfooter">
+  <div class="gfooter-inner">
+    <div class="crumb"><a href="index.html">博客</a> &nbsp;›&nbsp; 中转站会存储你的数据吗</div>
+    <div class="copy">版权所有 © 2026 TokenDirect · 企业级 AI Token 服务</div>
+    <div class="links">
+      <a href="#">隐私政策</a>
+      <a href="#">法律</a>
+      <a href="mailto:contact@example.com">联系我们</a>
+      <a href="index.html">返回首页</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+function copyLink(){
+  const url = window.location.href;
+  const done = ()=>{ const c=document.getElementById('copied'); c.classList.add('show'); setTimeout(()=>c.classList.remove('show'),1800); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(done).catch(done);
+  } else { done(); }
+}
+function shareX(){
+  const url = encodeURIComponent(window.location.href);
+  const text = encodeURIComponent('中转站会存储你的数据吗');
+  window.open('https://twitter.com/intent/tweet?text='+text+'&url='+url,'_blank','noopener');
+}
+</script>
+</body>
+</html>
